@@ -6,6 +6,25 @@ import re
 import string
 import unicodedata as ud
 
+UPPER = "[" + "".join([
+    "A-Z",
+    "ÀÁẢÃẠ",
+    "ĂẰẮẲẴẶ",
+    "ÂẦẤẨẪẬ",
+    "Đ",
+    "ÈÉẺẼẸ",
+    "ÊỀẾỂỄỆ",
+    "ÌÍỈĨỊ",
+    "ÒÓỎÕỌ",
+    "ÔỒỐỔỖỘ",
+    "ƠỜỚỞỠỢ",
+    "ÙÚỦŨỤ",
+    "ƯỪỨỬỮỰ",
+    "ỲÝỶỸỴ"
+]) + "]"
+LOWER = UPPER.lower()
+W = "[" + UPPER[1:-1] + LOWER[1:-1] + "]"  # upper and lower
+
 class ViTokenizer:
     bi_grams = set()
     tri_grams = set()
@@ -78,30 +97,76 @@ class ViTokenizer:
     def sylabelize(text):
         text = ud.normalize('NFC', text)
 
-        specials = ["==>", "->", "\.\.\.", ">>",'\n']
-        digit = "\d+([\.,_]\d+)+"
+        specials = [
+            r"=\>",
+            r"==>",
+            r"->",
+            r"\.{2,}",
+            r"-{2,}",
+            r">>",
+            r"\d+x\d+",  # dimension: 3x4
+            r"v\.v\.\.\.",
+            r"v\.v\.",
+            r"v\.v",
+            r"°[CF]"
+        ]
+        digit = [
+            r"\d+(?:\.\d+)+,\d+",     # e.g. 4.123,2
+            r"\d+(?:\.\d+)+",         # e.g. 60.542.000
+            r"\d+(?:,\d+)+",          # e.g. 100,000,000
+            r"\d+(?:[\.,_]\d+)?",     # 123
+        ]
+        phone = [
+            r"\d{2,}-\d{3,}-\d{3,}"       # e.g. 03-5730-2357
+                                          # very careful, it's easy to conflict with datetime
+        ]
+        name = [
+            r"\d+[A-Z]+\d+",
+            r"\d+[A-Z]+"  # e.g. 4K
+        ]
         email = "([a-zA-Z0-9_.+-]+@([a-zA-Z0-9-]+\.)+[a-zA-Z0-9-]+)"
         #web = "^(http[s]?://)?(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+$"
         web = "\w+://[^\s]+"
-        #datetime = [
-        #    "\d{1,2}\/\d{1,2}(\/\d{1,4})(^\dw. )+",
-        #    "\d{1,2}-\d{1,2}(-\d+)?",
-        #]
+        datetime = [
+            # date
+            r"\d{1,2}\/\d{1,2}\/\d+",     # e.g. 02/05/2014
+            r"\d{1,2}\/\d{1,4}",          # e.g. 02/2014
+                                          #   [WIP] conflict with number 1/2 (a half)
+            r"\d{1,2}-\d{1,2}-\d+",       # e.g. 02-03-2014
+            r"\d{1,2}-\d{1,4}",           # e.g. 08-2014
+                                          #   [WIP] conflict with range 5-10 (from 5 to 10)
+            r"\d{1,2}\.\d{1,2}\.\d+",     # e.g. 20.08.2014
+            r"\d{4}\/\d{1,2}\/\d{1,2}",   # e.g. 2014/08/20
+            r"\d{2}:\d{2}:\d{2}"          # time
+                                          # e.g. 10:20:50 (10 hours, 20 minutes, 50 seconds)
+        ]
         word = "\w+"
         non_word = "[^\w\s]"
         abbreviations = [
-            "[A-ZĐ]+\.",
-            "Tp\.",
-            "Mr\.", "Mrs\.", "Ms\.",
-            "Dr\.", "ThS\."
+            r"[A-ZĐ]+&[A-ZĐ]+",  # & at middle of word (e.g. H&M)
+            r"T\.Ư",  # dot at middle of word
+            f"{UPPER}+(?:\.{W}+)+\.?",
+            f"{W}+['’]{W}+",  # ' ’ at middle of word
+            # e.g. H'Mông, xã N’Thôn Hạ
+            r"[A-ZĐ]+\.(?!$)",  # dot at the end of word
+            r"Tp\.",
+            r"Mr\.", "Mrs\.", "Ms\.",
+            r"Dr\.", "ThS\.", "Th.S", "Th.s",
+            r"e-mail",            # - at middle of word
+            r"\d+[A-Z]+\d*-\d+",  # vehicle plates
+            # e.g. 43H-0530
+            r"NĐ-CP"
         ]
 
         patterns = []
-        patterns.extend(abbreviations)
         patterns.extend(specials)
+        patterns.extend(abbreviations)
         patterns.extend([web, email])
-        #patterns.extend(datetime)
-        patterns.extend([digit, non_word, word])
+        patterns.extend(phone)
+        patterns.extend(datetime)
+        patterns.extend(name)
+        patterns.extend(digit)
+        patterns.extend([non_word, word])
 
         patterns = "(" + "|".join(patterns) + ")"
         if sys.version_info < (3, 0):
