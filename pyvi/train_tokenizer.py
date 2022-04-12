@@ -7,6 +7,7 @@ import scipy.stats
 from sklearn.metrics import make_scorer
 from sklearn.model_selection import cross_val_score
 from sklearn.model_selection import RandomizedSearchCV
+import multiprocessing as mp
 
 tokenized_X_train = open('tokenized_X_train.pkl', 'rb') 
 tokenized_X_test = open('tokenized_X_test.pkl', 'rb') 
@@ -43,7 +44,7 @@ f1_scorer = make_scorer(metrics.flat_f1_score,
 rs = RandomizedSearchCV(crf, params_space,
                         cv=5,
                         verbose=1,
-                        n_jobs=12,
+                        n_jobs=int(mp.cpu_count() / 2),
                         n_iter=50,
                         scoring=f1_scorer)
 rs.fit(X_train, y_train)
